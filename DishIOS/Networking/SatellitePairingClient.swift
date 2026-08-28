@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import UIKit
 
 struct PairingResult: Decodable {
     let ok: Bool
@@ -24,7 +25,9 @@ final class SatellitePairingClient: NSObject {
         }
 
         let resolved = try await resolve(host.endpoint)
-        guard let url = URL(string: "https://\(resolved.host):\(host.pairingPort)/api/pair") else {
+        let hostString = resolved.host.contains(":") ? "[\(resolved.host)]" : resolved.host
+
+        guard let url = URL(string: "https://\(hostString):\(host.pairingPort)/api/pair") else {
             throw PairingError.invalidHost
         }
 
@@ -35,7 +38,7 @@ final class SatellitePairingClient: NSObject {
         request.httpBody = try JSONEncoder().encode(
             PairingRequest(
                 deviceId: stableDeviceID(),
-                deviceName: Host.current().localizedName ?? "iPhone",
+                deviceName: UIDevice.current.name,
                 pin: pin,
                 protocolVersion: 1
             )
@@ -81,31 +84,46 @@ final class SatellitePairingClient: NSObject {
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            let connection = NWConnection(
-                to: .service(name: name, type: type, domain: domain, interface: interface),
-                using: .tcp
+            let serviceEndpoint = NWEndpoint.service(
+                name: name,
+                type: type,
+                domain: domain,
+                interface: interface
             )
+            let connection = NWConnection(to: serviceEndpoint, using: .udp)
+            var didResume = false
+
+            func finish(_ result: Result<(host: String, port: UInt16), Error>) {
+                guard !didResume else { return }
+                didResume = true
+                connection.cancel()
+                continuation.resume(with: result)
+            }
 
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    if let remote = connection.currentPath?.remoteEndpoint,
-                       case let .hostPort(host, port) = remote {
-                        connection.cancel()
-                        continuation.resume(returning: (host.debugDescription, port.rawValue))
-                    } else {
-                        connection.cancel()
-                        continuation.resume(throwing: PairingError.invalidHost)
+                    guard let remote = connection.currentPath?.remoteEndpoint,
+                          case let .hostPort(host, port) = remote else {
+                        finish(.failure(PairingError.invalidHost))
+                        return
                     }
+                    finish(.success((host.debugDescription, port.rawValue)))
+
                 case .failed(let error):
-                    connection.cancel()
-                    continuation.resume(throwing: error)
+                    finish(.failure(error))
+
+                case .cancelled:
+                    if !didResume {
+                        finish(.failure(PairingError.invalidHost))
+                    }
+
                 default:
                     break
                 }
             }
 
-            connection.start(queue: .global())
+            connection.start(queue: .global(qos: .userInitiated))
         }
     }
 }
