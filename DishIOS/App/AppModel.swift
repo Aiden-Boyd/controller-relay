@@ -16,20 +16,33 @@ final class AppModel: ObservableObject {
 
     private var approvalTask: Task<Void, Never>?
 
-    func connectIfPaired(host: SatelliteHost) async -> Bool {
+    func prepareConnection(host: SatelliteHost) async -> ConnectionPreparation {
+        errorMessage = nil
+
         do {
-            guard try PairingKeyStore.load(machineID: host.machineID) != nil else {
-                return false
+            if try PairingKeyStore.load(machineID: host.machineID) != nil {
+                selectedSatellite = host
+                pairingState = .paired
+                await startStreaming()
+                return .connected
             }
 
-            selectedSatellite = host
-            pairingState = .paired
-            errorMessage = nil
-            await startStreaming()
-            return true
+            let probe = try await pairing.probe(host: host)
+
+            if probe.ok, let key = PairingApproval.validSharedKey(probe.sharedKey) {
+                try PairingKeyStore.save(key, machineID: host.machineID)
+                selectedSatellite = host
+                pairingState = .paired
+                await startStreaming()
+                return .connected
+            }
+
+            pairingState = .idle
+            return .pairingRequired
         } catch {
+            pairingState = .failed
             errorMessage = error.localizedDescription
-            return false
+            return .failed
         }
     }
 
@@ -55,8 +68,7 @@ final class AppModel: ObservableObject {
 
                 self.pairingState = .awaitingApproval
 
-                let pollCount = 60
-                for _ in 0..<pollCount {
+                for _ in 0..<60 {
                     try Task.checkCancellation()
                     try await Task.sleep(nanoseconds: 2_000_000_000)
 
@@ -167,6 +179,12 @@ final class AppModel: ObservableObject {
         streamer.stop()
         sessionDescriptor = nil
     }
+}
+
+enum ConnectionPreparation {
+    case connected
+    case pairingRequired
+    case failed
 }
 
 enum PairingState: Equatable {
