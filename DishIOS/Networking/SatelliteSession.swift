@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Network
+import UIKit
 
 struct SatelliteSessionDescriptor {
     let connectionID: String
