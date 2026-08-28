@@ -16,7 +16,12 @@ struct SatelliteListView: View {
                 } else {
                     ForEach(app.discovery.hosts) { host in
                         Button {
-                            pairingHost = host
+                            Task {
+                                let connected = await app.connectIfPaired(host: host)
+                                if !connected {
+                                    pairingHost = host
+                                }
+                            }
                         } label: {
                             HStack {
                                 Image(systemName: "desktopcomputer")
@@ -36,7 +41,7 @@ struct SatelliteListView: View {
                     }
                 }
             } header: {
-                Text("Gaming PCs")
+                Text("Satellites")
             }
 
             Section("Controllers") {
