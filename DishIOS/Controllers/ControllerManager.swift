@@ -11,7 +11,9 @@ final class ControllerManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refresh()
+            Task { @MainActor in
+                self?.refresh()
+            }
         }
 
         NotificationCenter.default.addObserver(
@@ -19,11 +21,15 @@ final class ControllerManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refresh()
+            Task { @MainActor in
+                self?.refresh()
+            }
         }
 
         GCController.startWirelessControllerDiscovery { [weak self] in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in
+                self?.refresh()
+            }
         }
 
         refresh()
