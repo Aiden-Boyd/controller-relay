@@ -51,6 +51,7 @@ final class SatelliteSessionClient {
         let proof = try HMACProof.make(pairingKeyHex: pairingKeyHex, deviceID: deviceID)
         let resolved = try await SatelliteEndpointResolver.resolve(host.endpoint)
         let hostString = resolved.host.contains(":") ? "[\(resolved.host)]" : resolved.host
+        let deviceName = await MainActor.run { UIDevice.current.name }
 
         guard let url = URL(string: "https://\(hostString):\(host.pairingPort)/api/connections") else {
             throw SatelliteSessionError.invalidHost
@@ -72,7 +73,7 @@ final class SatelliteSessionClient {
 
         let body = ConnectionRequest(
             deviceId: deviceID,
-            deviceName: UIDevice.current.name,
+            deviceName: deviceName,
             protocolVersion: 1,
             hmacProof: proof,
             controllers: controllers
