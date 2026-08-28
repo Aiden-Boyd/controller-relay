@@ -40,9 +40,13 @@ final class SatelliteStreamer: ObservableObject {
 
         codec = SatelliteUDPPacketCodec(token: token, key: key)
 
+        guard let udpPort = NWEndpoint.Port(rawValue: host.udpPort) else {
+            throw SatelliteStreamerError.invalidPort
+        }
+
         let endpoint = NWEndpoint.hostPort(
             host: NWEndpoint.Host(resolved.host),
-            port: NWEndpoint.Port(rawValue: 9876)!
+            port: udpPort
         )
 
         let connection = NWConnection(to: endpoint, using: .udp)
@@ -179,8 +183,14 @@ final class SatelliteStreamer: ObservableObject {
 
 enum SatelliteStreamerError: LocalizedError {
     case invalidToken
+    case invalidPort
 
     var errorDescription: String? {
-        "Satellite returned an invalid session token."
+        switch self {
+        case .invalidToken:
+            return "Satellite returned an invalid session token."
+        case .invalidPort:
+            return "Satellite advertised an invalid UDP port."
+        }
     }
 }
