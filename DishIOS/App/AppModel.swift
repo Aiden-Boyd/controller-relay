@@ -26,7 +26,7 @@ final class AppModel: ObservableObject {
     }
 }
 
-enum PairingState {
+enum PairingState: Equatable {
     case idle
     case pairing
     case paired
