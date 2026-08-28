@@ -2,11 +2,11 @@
 
 A native iPhone/iPad controller sender for [Satellite](https://github.com/TinkerNorth/satellite).
 
-Dish iOS discovers a Satellite receiver on your LAN, pairs using Satellite's HTTPS control plane, reads physical controllers through Apple's GameController framework, and will stream controller state to Satellite over its encrypted UDP data plane.
+Dish iOS discovers a Satellite receiver on your LAN, pairs using Satellite's HTTPS control plane, reads physical controllers through Apple's GameController framework, creates an authenticated Satellite session, derives the per-session key, and streams encrypted controller state over UDP.
 
 ## Status
 
-### Milestone 1 — scaffolded
+### Working scaffold
 
 - SwiftUI app shell
 - Bonjour discovery for `_satellite._udp`
@@ -15,22 +15,33 @@ Dish iOS discovers a Satellite receiver on your LAN, pairs using Satellite's HTT
 - 4-digit operator-PIN pairing against `POST /api/pair`
 - TOFU certificate fingerprint pinning for Satellite's self-signed TLS certificate
 - pairing key stored in iOS Keychain
-- paired dashboard
+- authenticated `PUT /api/connections` session creation
+- HMAC-SHA256 proof generation
+- HKDF-SHA256 per-session key derivation
+- ChaCha20-Poly1305-IETF-compatible packet construction via CryptoKit
+- Satellite token/counter/AAD/nonce layout
+- XUSB-compatible 12-byte controller reports
+- encrypted UDP input streaming on port 9876
+- ~250 Hz snapshot loop
+- 2-second heartbeat
+- encrypted heartbeat ACK parsing
+- replay protection for server-to-client packets
+- up to 16 controller descriptors, subject to what iOS actually exposes
+- basic session-close handling
 
 ### Next
 
-- authenticated session creation via `PUT /api/connections`
-- HKDF-SHA256 session-key derivation
-- ChaCha20-Poly1305 UDP packet codec
-- XUSB-style 12-byte gamepad reports
-- 250-ish Hz input streaming
-- heartbeat/ACK handling
-- multiple controller slots
-- rumble feedback
+- real-device integration testing against current Satellite
+- rumble feedback through `GCDeviceHaptics` / controller haptics
+- live hot-plug topology updates while already streaming
+- dynamic emulation type selection from Satellite's catalog
+- motion/battery/touchpad telemetry
+- better reconnect/reconcile behavior from heartbeat epoch/bitmap
+- polished controller input tester and per-slot UI
 
 ## Generate the Xcode project
 
-This repo uses [XcodeGen](https://github.com/yonaskolb/XcodeGen) so the generated `.xcodeproj` does not need to be hand-maintained.
+This repo uses [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
 brew install xcodegen
@@ -40,19 +51,35 @@ xcodegen generate
 open DishIOS.xcodeproj
 ```
 
-Select your Apple development team in Xcode, connect an iPhone, and run the `DishIOS` target.
+Then:
 
-> A physical iPhone/iPad is strongly recommended because local-network permissions, Bluetooth controllers, and real LAN discovery are central to the app.
+1. Select the `DishIOS` target.
+2. Under **Signing & Capabilities**, choose your Apple development team.
+3. Connect an iPhone or iPad.
+4. Build and run on the physical device.
+5. Allow the Local Network permission prompt.
+6. Pair a Bluetooth controller with the iPhone/iPad.
+7. Run Satellite on the Windows PC.
+8. Select the discovered PC in Dish and enter Satellite's 4-digit PIN.
+9. Tap **Start Streaming**.
 
-## Satellite
+A physical device is strongly recommended because local-network permissions, Bluetooth controllers, and real LAN discovery are central to the app.
 
-Run Satellite on the Windows gaming PC. Dish iOS uses the current Satellite protocol v1:
+## Satellite protocol
+
+Dish iOS currently implements Satellite protocol v1:
 
 - HTTPS control plane: port 9443
 - encrypted UDP data plane: port 9876
 - mDNS discovery: `_satellite._udp`
+- heartbeat cadence: 2 seconds
+- INPUT payload: controller index + 12-byte XUSB report
 
 The admin web UI on port 9877 is not a client API and Dish iOS does not use it.
+
+## Important
+
+The transport and crypto implementation has been written against Satellite's current `docs/contract.md`, but it still needs a physical iPhone + real Satellite receiver integration test. The next useful debugging data is any Xcode build error or Satellite log produced by the first run.
 
 ## License
 
