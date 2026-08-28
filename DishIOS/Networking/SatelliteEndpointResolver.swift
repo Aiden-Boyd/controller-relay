@@ -10,26 +10,26 @@ enum SatelliteEndpointResolver {
         return try await withCheckedThrowingContinuation { continuation in
             let service = NWEndpoint.service(name: name, type: type, domain: domain, interface: interface)
             let connection = NWConnection(to: service, using: .udp)
-            var finished = false
+            let state = ResolverState()
 
-            func finish(_ result: Result<(host: String, port: UInt16), Error>) {
-                guard !finished else { return }
-                finished = true
-                connection.cancel()
-                continuation.resume(with: result)
-            }
-
-            connection.stateUpdateHandler = { state in
-                switch state {
+            connection.stateUpdateHandler = { nwState in
+                switch nwState {
                 case .ready:
                     guard let remote = connection.currentPath?.remoteEndpoint,
                           case let .hostPort(host, port) = remote else {
-                        finish(.failure(PairingError.invalidHost))
+                        state.finish(.failure(PairingError.invalidHost), connection: connection, continuation: continuation)
                         return
                     }
-                    finish(.success((host.debugDescription, port.rawValue)))
+
+                    state.finish(
+                        .success((host.debugDescription, port.rawValue)),
+                        connection: connection,
+                        continuation: continuation
+                    )
+
                 case .failed(let error):
-                    finish(.failure(error))
+                    state.finish(.failure(error), connection: connection, continuation: continuation)
+
                 default:
                     break
                 }
@@ -37,5 +37,27 @@ enum SatelliteEndpointResolver {
 
             connection.start(queue: .global(qos: .userInitiated))
         }
+    }
+}
+
+private final class ResolverState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+
+    func finish(
+        _ result: Result<(host: String, port: UInt16), Error>,
+        connection: NWConnection,
+        continuation: CheckedContinuation<(host: String, port: UInt16), Error>
+    ) {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        lock.unlock()
+
+        connection.cancel()
+        continuation.resume(with: result)
     }
 }
