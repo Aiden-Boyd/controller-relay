@@ -6,13 +6,17 @@ Dish iOS discovers a Satellite receiver on your LAN, pairs using Satellite's HTT
 
 ## Status
 
-### Working scaffold
+### Current implementation
 
 - SwiftUI app shell
 - Bonjour discovery for `_satellite._udp`
 - Satellite host list
 - physical controller discovery through `GameController`
-- 4-digit operator-PIN pairing against `POST /api/pair`
+- Android Dish-style dual PIN pairing:
+  - probe Satellite first
+  - automatically generate/show a 4-digit Dish PIN
+  - submit `clientPin` and poll `/api/pair/status` every 2 seconds for up to 2 minutes
+  - keep manual entry of the PIN shown by Satellite as a fallback
 - TOFU certificate fingerprint pinning for Satellite's self-signed TLS certificate
 - pairing key stored in iOS Keychain
 - authenticated `PUT /api/connections` session creation
@@ -21,7 +25,7 @@ Dish iOS discovers a Satellite receiver on your LAN, pairs using Satellite's HTT
 - ChaCha20-Poly1305-IETF-compatible packet construction via CryptoKit
 - Satellite token/counter/AAD/nonce layout
 - XUSB-compatible 12-byte controller reports
-- encrypted UDP input streaming on port 9876
+- encrypted UDP input streaming on the UDP port advertised by Satellite (default 9876)
 - ~250 Hz snapshot loop
 - 2-second heartbeat
 - encrypted heartbeat ACK parsing
@@ -29,14 +33,16 @@ Dish iOS discovers a Satellite receiver on your LAN, pairs using Satellite's HTT
 - up to 16 controller descriptors, subject to what iOS actually exposes
 - basic session-close handling
 
-### Next
+### Not yet ported from Android Dish
 
 - real-device integration testing against current Satellite
+- Android Dish's dynamic per-slot controller PUT/DELETE convergence
 - rumble feedback through `GCDeviceHaptics` / controller haptics
 - live hot-plug topology updates while already streaming
 - dynamic emulation type selection from Satellite's catalog
 - motion/battery/touchpad telemetry
-- better reconnect/reconcile behavior from heartbeat epoch/bitmap
+- automatic reconnect + heartbeat epoch/bitmap reconciliation
+- on-screen virtual controller and touchpad
 - polished controller input tester and per-slot UI
 
 ## Generate the Xcode project
