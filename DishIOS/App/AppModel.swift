@@ -181,7 +181,7 @@ final class AppModel: ObservableObject {
     }
 }
 
-enum ConnectionPreparation {
+enum ConnectionPreparation: Equatable {
     case connected
     case pairingRequired
     case failed
