@@ -52,18 +52,26 @@ final class SatelliteDiscovery: ObservableObject {
             return nil
         }
 
-        let metadata = result.metadata
         var machineID = name
         var pairingPort: UInt16 = 9443
+        var httpPort: UInt16 = 9443
+        var udpPort: UInt16 = 9876
 
-        if case let .bonjour(txtRecord) = metadata {
+        if case let .bonjour(txtRecord) = result.metadata {
             if let mid = txtRecord["mid"], !mid.isEmpty {
                 machineID = mid
             }
 
-            if let pairString = txtRecord["pair"],
-               let parsed = UInt16(pairString) {
+            if let value = txtRecord["pair"], let parsed = UInt16(value) {
                 pairingPort = parsed
+            }
+
+            if let value = txtRecord["http"], let parsed = UInt16(value) {
+                httpPort = parsed
+            }
+
+            if let value = txtRecord["udp"], let parsed = UInt16(value) {
+                udpPort = parsed
             }
         }
 
@@ -71,7 +79,9 @@ final class SatelliteDiscovery: ObservableObject {
             machineID: machineID,
             name: name,
             endpoint: result.endpoint,
-            pairingPort: pairingPort
+            pairingPort: pairingPort,
+            httpPort: httpPort,
+            udpPort: udpPort
         )
     }
 }
