@@ -15,6 +15,7 @@ final class SatelliteStreamer: ObservableObject {
     private var codec: SatelliteUDPPacketCodec?
     private var sendCounter: UInt32 = 1
     private var receiveCounter: UInt32 = 0
+    private var activeControllers: [GCController] = []
 
     func start(
         host: SatelliteHost,
@@ -23,6 +24,8 @@ final class SatelliteStreamer: ObservableObject {
         controllers: [GCController]
     ) async throws {
         stop()
+
+        activeControllers = Array(controllers.prefix(16))
 
         let resolved = try await SatelliteEndpointResolver.resolve(host.endpoint)
         let key = try HKDFSessionKey.derive(
@@ -68,7 +71,9 @@ final class SatelliteStreamer: ObservableObject {
         let inputTimer = DispatchSource.makeTimerSource(queue: .global(qos: .userInteractive))
         inputTimer.schedule(deadline: .now(), repeating: .milliseconds(4), leeway: .milliseconds(1))
         inputTimer.setEventHandler { [weak self] in
-            self?.sendControllerSnapshots(controllers)
+            Task { @MainActor in
+                self?.sendControllerSnapshots()
+            }
         }
         inputTimer.resume()
         self.inputTimer = inputTimer
@@ -76,7 +81,9 @@ final class SatelliteStreamer: ObservableObject {
         let heartbeatTimer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
         heartbeatTimer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(2))
         heartbeatTimer.setEventHandler { [weak self] in
-            self?.send(type: .heartbeat, payload: Data())
+            Task { @MainActor in
+                self?.send(type: .heartbeat, payload: Data())
+            }
         }
         heartbeatTimer.resume()
         self.heartbeatTimer = heartbeatTimer
@@ -90,13 +97,14 @@ final class SatelliteStreamer: ObservableObject {
         connection?.cancel()
         connection = nil
         codec = nil
+        activeControllers = []
         sendCounter = 1
         receiveCounter = 0
         isStreaming = false
     }
 
-    private func sendControllerSnapshots(_ controllers: [GCController]) {
-        for (index, controller) in controllers.prefix(16).enumerated() {
+    private func sendControllerSnapshots() {
+        for (index, controller) in activeControllers.enumerated() {
             guard let gamepad = controller.extendedGamepad else { continue }
             var payload = Data([UInt8(index)])
             payload.append(GamepadReport.from(gamepad).encode())
@@ -114,10 +122,17 @@ final class SatelliteStreamer: ObservableObject {
                 type: type,
                 payload: payload
             )
-            sendCounter &+= 1
+
+            if sendCounter >= 0xF0000000 {
+                errorMessage = "Session counter is nearing exhaustion. Reconnect to Satellite."
+                stop()
+                return
+            }
+
+            sendCounter += 1
             connection.send(content: packet, completion: .contentProcessed { _ in })
         } catch {
-            Task { @MainActor in self.errorMessage = error.localizedDescription }
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -125,14 +140,16 @@ final class SatelliteStreamer: ObservableObject {
         guard let connection else { return }
 
         connection.receiveMessage { [weak self] data, _, _, error in
-            guard let self else { return }
+            Task { @MainActor in
+                guard let self else { return }
 
-            if let data {
-                self.handleIncoming(data)
-            }
+                if let data {
+                    self.handleIncoming(data)
+                }
 
-            if error == nil {
-                self.receiveLoop()
+                if error == nil, self.connection != nil {
+                    self.receiveLoop()
+                }
             }
         }
     }
@@ -147,17 +164,15 @@ final class SatelliteStreamer: ObservableObject {
 
             switch SatelliteMessageType(rawValue: decoded.type) {
             case .heartbeatAck:
-                Task { @MainActor in self.lastHeartbeatAck = Date() }
+                lastHeartbeatAck = Date()
             case .sessionClose:
-                Task { @MainActor in
-                    self.errorMessage = "Satellite closed the session."
-                    self.stop()
-                }
+                errorMessage = "Satellite closed the session."
+                stop()
             default:
                 break
             }
         } catch {
-            // Ignore malformed/unauthenticated packets.
+            // Malformed, replayed, wrong-token, or unauthenticated packets are ignored.
         }
     }
 }
