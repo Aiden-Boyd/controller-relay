@@ -24,6 +24,7 @@ final class SatellitePairingClient: NSObject {
 
         let resolved = try await SatelliteEndpointResolver.resolve(host.endpoint)
         let hostString = resolved.host.contains(":") ? "[\(resolved.host)]" : resolved.host
+        let deviceName = await MainActor.run { UIDevice.current.name }
 
         guard let url = URL(string: "https://\(hostString):\(host.pairingPort)/api/pair") else {
             throw PairingError.invalidHost
@@ -36,7 +37,7 @@ final class SatellitePairingClient: NSObject {
         request.httpBody = try JSONEncoder().encode(
             PairingRequest(
                 deviceId: DeviceIdentity.current(),
-                deviceName: UIDevice.current.name,
+                deviceName: deviceName,
                 pin: pin,
                 protocolVersion: 1
             )
