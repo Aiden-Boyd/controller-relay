@@ -5,7 +5,7 @@ struct PairingView: View {
     @Environment(\.dismiss) private var dismiss
 
     let host: SatelliteHost
-    @State private var pin = ""
+    @State private var satellitePIN = ""
 
     var body: some View {
         NavigationStack {
@@ -14,17 +14,66 @@ struct PairingView: View {
                     Label(host.name, systemImage: "desktopcomputer")
                 }
 
-                Section("Pairing PIN") {
-                    TextField("1234", text: $pin)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .onChange(of: pin) { _, value in
-                            pin = String(value.filter(\.isNumber).prefix(4))
-                        }
+                Section("Approve on Satellite") {
+                    VStack(spacing: 12) {
+                        Text("Enter this PIN on the Satellite PC")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
 
-                    Text("Enter the 4-digit PIN shown by Satellite on your Windows PC.")
+                        Text(app.clientPairingPIN.isEmpty ? "••••" : app.clientPairingPIN)
+                            .font(.system(size: 42, weight: .bold, design: .monospaced))
+                            .tracking(8)
+                            .frame(maxWidth: .infinity)
+
+                        if app.pairingState == .requestingApproval || app.pairingState == .awaitingApproval {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text(
+                                    app.pairingState == .requestingApproval
+                                        ? "Sending pairing request…"
+                                        : "Waiting for approval on Satellite…"
+                                )
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 6)
+
+                    Text("Dish sends this request automatically. Approve the matching 4-digit PIN on your Windows PC.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("Or use Satellite's PIN") {
+                    TextField("4-digit PIN", text: $satellitePIN)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .onChange(of: satellitePIN) { _, value in
+                            satellitePIN = String(value.filter(\.isNumber).prefix(4))
+                        }
+
+                    Text("If Satellite is already showing a PIN, enter that PIN here instead.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        Task {
+                            await app.pairWithSatellitePIN(host: host, pin: satellitePIN)
+                        }
+                    } label: {
+                        if app.pairingState == .pairingWithSatellitePIN {
+                            HStack {
+                                ProgressView()
+                                Text("Pairing…")
+                            }
+                            .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Pair with Satellite PIN")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .disabled(satellitePIN.count != 4 || app.pairingState == .pairingWithSatellitePIN)
                 }
 
                 if let error = app.errorMessage {
@@ -33,27 +82,30 @@ struct PairingView: View {
                             .foregroundStyle(.red)
                     }
                 }
-
-                Button {
-                    Task {
-                        await app.pair(host: host, pin: pin)
-                        if app.pairingState == .paired {
-                            dismiss()
-                        }
-                    }
-                } label: {
-                    if app.pairingState == .pairing {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text("Pair")
-                            .frame(maxWidth: .infinity)
+            }
+            .navigationTitle("Pair with Satellite")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        app.cancelPairing()
+                        dismiss()
                     }
                 }
-                .disabled(pin.count != 4 || app.pairingState == .pairing)
             }
-            .navigationTitle("Connect")
-            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                app.beginPairing(host: host)
+            }
+            .onChange(of: app.pairingState) { _, state in
+                if state == .paired {
+                    dismiss()
+                }
+            }
+            .onDisappear {
+                if app.pairingState != .paired {
+                    app.cancelPairing()
+                }
+            }
         }
     }
 }
