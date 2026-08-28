@@ -10,8 +10,15 @@ struct DashboardView: View {
                 HStack {
                     Label(host.name, systemImage: "desktopcomputer")
                     Spacer()
-                    Label("Paired", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Label(
+                        app.streamer.isStreaming ? "Streaming" : "Paired",
+                        systemImage: app.streamer.isStreaming ? "antenna.radiowaves.left.and.right" : "checkmark.circle.fill"
+                    )
+                    .foregroundStyle(app.streamer.isStreaming ? .green : .secondary)
+                }
+
+                if let ack = app.streamer.lastHeartbeatAck {
+                    LabeledContent("Last heartbeat", value: ack.formatted(date: .omitted, time: .standard))
                 }
             }
 
@@ -33,19 +40,35 @@ struct DashboardView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                            if app.streamer.isStreaming {
+                                Image(systemName: "wave.3.right.circle.fill")
+                                    .foregroundStyle(.green)
+                            }
                         }
                     }
                 }
             }
 
             Section {
-                Text("UDP streaming is the next milestone. Discovery, physical-controller detection, TOFU TLS pairing, and secure key storage are scaffolded.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Button(app.streamer.isStreaming ? "Stop Streaming" : "Start Streaming") {
+                    if app.streamer.isStreaming {
+                        app.stopStreaming()
+                    } else {
+                        Task { await app.startStreaming() }
+                    }
+                }
+                .disabled(app.controllerManager.controllers.isEmpty && !app.streamer.isStreaming)
+
+                if let error = app.streamer.errorMessage ?? app.errorMessage {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
             }
         }
-        .navigationTitle("Controller Relay")
+        .navigationTitle("Dish")
+        .onDisappear {
+            app.stopStreaming()
+        }
     }
 }
