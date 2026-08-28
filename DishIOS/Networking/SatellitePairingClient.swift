@@ -17,14 +17,12 @@ private struct PairingRequest: Encodable {
 }
 
 final class SatellitePairingClient: NSObject {
-    private let deviceIDKey = "dish.deviceId"
-
     func pair(host: SatelliteHost, pin: String) async throws -> PairingResult {
         guard pin.count == 4, pin.allSatisfy(\.isNumber) else {
             throw PairingError.invalidPIN
         }
 
-        let resolved = try await resolve(host.endpoint)
+        let resolved = try await SatelliteEndpointResolver.resolve(host.endpoint)
         let hostString = resolved.host.contains(":") ? "[\(resolved.host)]" : resolved.host
 
         guard let url = URL(string: "https://\(hostString):\(host.pairingPort)/api/pair") else {
@@ -37,7 +35,7 @@ final class SatellitePairingClient: NSObject {
         request.timeoutInterval = 10
         request.httpBody = try JSONEncoder().encode(
             PairingRequest(
-                deviceId: stableDeviceID(),
+                deviceId: DeviceIdentity.current(),
                 deviceName: UIDevice.current.name,
                 pin: pin,
                 protocolVersion: 1
@@ -66,65 +64,6 @@ final class SatellitePairingClient: NSObject {
         }
 
         return result
-    }
-
-    private func stableDeviceID() -> String {
-        if let existing = UserDefaults.standard.string(forKey: deviceIDKey) {
-            return existing
-        }
-
-        let id = UUID().uuidString.lowercased()
-        UserDefaults.standard.set(id, forKey: deviceIDKey)
-        return id
-    }
-
-    private func resolve(_ endpoint: NWEndpoint) async throws -> (host: String, port: UInt16) {
-        guard case let .service(name, type, domain, interface) = endpoint else {
-            throw PairingError.invalidHost
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let serviceEndpoint = NWEndpoint.service(
-                name: name,
-                type: type,
-                domain: domain,
-                interface: interface
-            )
-            let connection = NWConnection(to: serviceEndpoint, using: .udp)
-            var didResume = false
-
-            func finish(_ result: Result<(host: String, port: UInt16), Error>) {
-                guard !didResume else { return }
-                didResume = true
-                connection.cancel()
-                continuation.resume(with: result)
-            }
-
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    guard let remote = connection.currentPath?.remoteEndpoint,
-                          case let .hostPort(host, port) = remote else {
-                        finish(.failure(PairingError.invalidHost))
-                        return
-                    }
-                    finish(.success((host.debugDescription, port.rawValue)))
-
-                case .failed(let error):
-                    finish(.failure(error))
-
-                case .cancelled:
-                    if !didResume {
-                        finish(.failure(PairingError.invalidHost))
-                    }
-
-                default:
-                    break
-                }
-            }
-
-            connection.start(queue: .global(qos: .userInitiated))
-        }
     }
 }
 
