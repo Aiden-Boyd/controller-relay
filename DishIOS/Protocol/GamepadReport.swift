@@ -58,10 +58,11 @@ struct GamepadReport {
 
     private static func axis(_ value: Float) -> Int16 {
         let clamped = max(-1.0, min(1.0, value))
+
         if clamped >= 0 {
-            return Int16(clamping: Int(clamped * Float(Int16.max)))
+            return Int16(clamping: Int(clamped * 32767.0))
         } else {
-            return Int16(clamping: Int(clamped * Float(-Int16.min)))
+            return Int16(clamping: Int(clamped * 32768.0))
         }
     }
 }
