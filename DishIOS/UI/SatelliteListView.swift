@@ -3,6 +3,7 @@ import SwiftUI
 struct SatelliteListView: View {
     @EnvironmentObject private var app: AppModel
     @State private var pairingHost: SatelliteHost?
+    @State private var connectingHostID: String?
 
     var body: some View {
         List {
@@ -17,31 +18,50 @@ struct SatelliteListView: View {
                     ForEach(app.discovery.hosts) { host in
                         Button {
                             Task {
-                                let connected = await app.connectIfPaired(host: host)
-                                if !connected {
+                                connectingHostID = host.id
+                                let result = await app.prepareConnection(host: host)
+                                connectingHostID = nil
+
+                                if result == .pairingRequired {
                                     pairingHost = host
                                 }
                             }
                         } label: {
                             HStack {
                                 Image(systemName: "desktopcomputer")
+
                                 VStack(alignment: .leading) {
                                     Text(host.name)
                                         .font(.headline)
+
                                     Text(host.machineID)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
+
                                 Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.tertiary)
+
+                                if connectingHostID == host.id {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
                         }
                         .buttonStyle(.plain)
+                        .disabled(connectingHostID != nil)
                     }
                 }
             } header: {
                 Text("Satellites")
+            }
+
+            if let error = app.errorMessage, app.pairingState == .failed {
+                Section {
+                    Text(error)
+                        .foregroundStyle(.red)
+                }
             }
 
             Section("Controllers") {
