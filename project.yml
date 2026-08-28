@@ -1,0 +1,24 @@
+name: DishIOS
+options:
+  bundleIdPrefix: com.aidenboyd
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    SWIFT_VERSION: "5.10"
+targets:
+  DishIOS:
+    type: application
+    platform: iOS
+    sources:
+      - DishIOS
+    info:
+      path: DishIOS/Info.plist
+      properties:
+        CFBundleDisplayName: Dish
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: Dish uses your local network to find and connect to Satellite on your gaming PC.
+        NSBonjourServices:
+          - _satellite._udp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aidenboyd.dishios
