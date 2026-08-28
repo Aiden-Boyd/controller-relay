@@ -14,8 +14,8 @@ struct PairingResponse: Decodable {
 private struct PairingRequest: Encodable {
     let deviceId: String
     let deviceName: String
-    let pin: String?
-    let clientPin: String?
+    let pin: String
+    let clientPin: String
     let protocolVersion: Int
 }
 
@@ -27,7 +27,7 @@ private struct PairStatusResponse: Decodable {
 
 final class SatellitePairingClient: NSObject {
     func probe(host: SatelliteHost) async throws -> PairingResponse {
-        try await sendPairRequest(host: host, pin: "", clientPin: nil)
+        try await sendPairRequest(host: host, pin: "", clientPin: "")
     }
 
     func pairWithSatellitePIN(host: SatelliteHost, pin: String) async throws -> PairingResponse {
@@ -35,7 +35,7 @@ final class SatellitePairingClient: NSObject {
             throw PairingError.invalidPIN
         }
 
-        let response = try await sendPairRequest(host: host, pin: pin, clientPin: nil)
+        let response = try await sendPairRequest(host: host, pin: pin, clientPin: "")
         guard response.ok, PairingApproval.validSharedKey(response.sharedKey) != nil else {
             throw PairingError.rejected(response.error ?? response.message ?? "Pairing failed")
         }
@@ -47,7 +47,7 @@ final class SatellitePairingClient: NSObject {
             throw PairingError.invalidPIN
         }
 
-        return try await sendPairRequest(host: host, pin: nil, clientPin: clientPIN)
+        return try await sendPairRequest(host: host, pin: "", clientPin: clientPIN)
     }
 
     func approvalStatus(host: SatelliteHost) async throws -> PairApprovalStatus {
@@ -78,8 +78,8 @@ final class SatellitePairingClient: NSObject {
 
     private func sendPairRequest(
         host: SatelliteHost,
-        pin: String?,
-        clientPin: String?
+        pin: String,
+        clientPin: String
     ) async throws -> PairingResponse {
         let url = try await makeURL(host: host, port: host.pairingPort, path: "/api/pair")
         let deviceName = await MainActor.run { UIDevice.current.name }
