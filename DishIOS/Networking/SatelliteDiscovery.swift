@@ -57,14 +57,11 @@ final class SatelliteDiscovery: ObservableObject {
         var pairingPort: UInt16 = 9443
 
         if case let .bonjour(txtRecord) = metadata {
-            if let midData = txtRecord["mid"],
-               let mid = String(data: midData, encoding: .utf8),
-               !mid.isEmpty {
+            if let mid = txtRecord["mid"], !mid.isEmpty {
                 machineID = mid
             }
 
-            if let pairData = txtRecord["pair"],
-               let pairString = String(data: pairData, encoding: .utf8),
+            if let pairString = txtRecord["pair"],
                let parsed = UInt16(pairString) {
                 pairingPort = parsed
             }
