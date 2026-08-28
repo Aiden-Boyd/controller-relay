@@ -53,7 +53,7 @@ final class SatelliteSessionClient {
         let hostString = resolved.host.contains(":") ? "[\(resolved.host)]" : resolved.host
         let deviceName = await MainActor.run { UIDevice.current.name }
 
-        guard let url = URL(string: "https://\(hostString):\(host.pairingPort)/api/connections") else {
+        guard let url = URL(string: "https://\(hostString):\(host.httpPort)/api/connections") else {
             throw SatelliteSessionError.invalidHost
         }
 
