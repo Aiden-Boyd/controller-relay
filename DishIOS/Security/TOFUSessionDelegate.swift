@@ -4,7 +4,6 @@ import CryptoKit
 
 final class TOFUSessionDelegate: NSObject, URLSessionDelegate {
     private let machineID: String
-    private let defaults = UserDefaults.standard
 
     init(machineID: String) {
         self.machineID = machineID
@@ -17,17 +16,19 @@ final class TOFUSessionDelegate: NSObject, URLSessionDelegate {
     ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust,
-              let certificate = SecTrustGetCertificateAtIndex(trust, 0),
-              let certificateData = SecCertificateCopyData(certificate) as Data? else {
+              let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let certificate = certificates.first else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
 
+        let certificateData = SecCertificateCopyData(certificate) as Data
         let fingerprint = SHA256.hash(data: certificateData)
             .map { String(format: "%02x", $0) }
             .joined()
 
         let key = "dish.tofu.\(machineID)"
+        let defaults = UserDefaults.standard
 
         if let pinned = defaults.string(forKey: key) {
             guard pinned == fingerprint else {
