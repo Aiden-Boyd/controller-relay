@@ -6,6 +6,7 @@ final class AppModel: ObservableObject {
     @Published var pairingState: PairingState = .idle
     @Published var errorMessage: String?
     @Published var sessionDescriptor: SatelliteSessionDescriptor?
+    @Published var clientPairingPIN = ""
 
     let discovery = SatelliteDiscovery()
     let pairing = SatellitePairingClient()
@@ -13,15 +14,121 @@ final class AppModel: ObservableObject {
     let streamer = SatelliteStreamer()
     let controllerManager = ControllerManager()
 
-    func pair(host: SatelliteHost, pin: String) async {
-        pairingState = .pairing
+    private var approvalTask: Task<Void, Never>?
+
+    func connectIfPaired(host: SatelliteHost) async -> Bool {
+        do {
+            guard try PairingKeyStore.load(machineID: host.machineID) != nil else {
+                return false
+            }
+
+            selectedSatellite = host
+            pairingState = .paired
+            errorMessage = nil
+            await startStreaming()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func beginPairing(host: SatelliteHost) {
+        cancelPairing()
+        errorMessage = nil
+        clientPairingPIN = PairingApproval.generatePIN()
+        pairingState = .requestingApproval
+
+        approvalTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let initial = try await self.pairing.requestApproval(
+                    host: host,
+                    clientPIN: self.clientPairingPIN
+                )
+
+                if let key = PairingApproval.validSharedKey(initial.sharedKey), initial.ok {
+                    await self.completePairing(host: host, sharedKey: key)
+                    return
+                }
+
+                self.pairingState = .awaitingApproval
+
+                let pollCount = 60
+                for _ in 0..<pollCount {
+                    try Task.checkCancellation()
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+
+                    switch try await self.pairing.approvalStatus(host: host) {
+                    case .approved(let key):
+                        await self.completePairing(host: host, sharedKey: key)
+                        return
+
+                    case .pending:
+                        continue
+
+                    case .declined:
+                        self.pairingState = .failed
+                        self.errorMessage = "The Satellite declined the pairing request."
+                        self.approvalTask = nil
+                        return
+                    }
+                }
+
+                self.pairingState = .failed
+                self.errorMessage = "No response from Satellite. The pairing request timed out."
+                self.approvalTask = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                self.pairingState = .failed
+                self.errorMessage = error.localizedDescription
+                self.approvalTask = nil
+            }
+        }
+    }
+
+    func pairWithSatellitePIN(host: SatelliteHost, pin: String) async {
+        let priorState = pairingState
+        pairingState = .pairingWithSatellitePIN
         errorMessage = nil
 
         do {
-            let result = try await pairing.pair(host: host, pin: pin)
-            try PairingKeyStore.save(result.sharedKey, machineID: host.machineID)
+            let result = try await pairing.pairWithSatellitePIN(host: host, pin: pin)
+            guard let key = PairingApproval.validSharedKey(result.sharedKey) else {
+                throw PairingError.invalidResponse
+            }
+
+            await completePairing(host: host, sharedKey: key)
+        } catch {
+            errorMessage = error.localizedDescription
+            if approvalTask != nil {
+                pairingState = priorState == .requestingApproval ? .requestingApproval : .awaitingApproval
+            } else {
+                pairingState = .failed
+            }
+        }
+    }
+
+    func cancelPairing() {
+        approvalTask?.cancel()
+        approvalTask = nil
+        clientPairingPIN = ""
+        if pairingState != .paired {
+            pairingState = .idle
+        }
+    }
+
+    private func completePairing(host: SatelliteHost, sharedKey: String) async {
+        do {
+            try PairingKeyStore.save(sharedKey, machineID: host.machineID)
+            approvalTask?.cancel()
+            approvalTask = nil
             selectedSatellite = host
             pairingState = .paired
+            errorMessage = nil
+            await startStreaming()
         } catch {
             pairingState = .failed
             errorMessage = error.localizedDescription
@@ -64,7 +171,9 @@ final class AppModel: ObservableObject {
 
 enum PairingState: Equatable {
     case idle
-    case pairing
+    case requestingApproval
+    case awaitingApproval
+    case pairingWithSatellitePIN
     case paired
     case failed
 }
