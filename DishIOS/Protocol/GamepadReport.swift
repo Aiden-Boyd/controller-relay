@@ -1,7 +1,7 @@
 import Foundation
 import GameController
 
-struct GamepadReport {
+struct GamepadReport: Equatable {
     var buttons: UInt16 = 0
     var leftTrigger: UInt8 = 0
     var rightTrigger: UInt8 = 0
