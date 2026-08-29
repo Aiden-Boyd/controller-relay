@@ -134,11 +134,23 @@ final class SatelliteSessionClient {
             throw SatelliteSessionError.rejected(decoded.error ?? "Satellite returned incomplete session credentials.")
         }
 
+        let applyResults = decoded.controllers ?? []
         let registered = Set(
-            (decoded.controllers ?? [])
+            applyResults
                 .filter(\.slotIsLive)
                 .map(\.ctrlIdx)
         )
+
+        if controllerCount > 0 && registered.isEmpty {
+            let detail = applyResults.isEmpty
+                ? "Satellite returned no controller apply results."
+                : applyResults
+                    .map { "#\($0.ctrlIdx): \($0.result)" }
+                    .joined(separator: ", ")
+            throw SatelliteSessionError.rejected(
+                "Satellite did not register the connected controller. \(detail)"
+            )
+        }
 
         return SatelliteSessionDescriptor(
             connectionID: connectionID,
