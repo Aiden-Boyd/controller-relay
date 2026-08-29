@@ -23,6 +23,16 @@ struct DashboardView: View {
             }
 
             Section("Controllers") {
+                LabeledContent(
+                    "Detected on iPhone",
+                    value: "\(app.controllerManager.controllers.count)"
+                )
+
+                LabeledContent(
+                    "Registered on Satellite",
+                    value: "\(app.sessionDescriptor?.registeredControllerIndices.count ?? 0)"
+                )
+
                 if app.controllerManager.controllers.isEmpty {
                     ContentUnavailableView(
                         "No Controllers",
