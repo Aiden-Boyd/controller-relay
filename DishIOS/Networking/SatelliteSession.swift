@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import Network
 import UIKit
 
@@ -9,6 +8,7 @@ struct SatelliteSessionDescriptor {
     let sessionSaltHex: String
     let epoch: UInt16
     let maxControllers: Int
+    let registeredControllerIndices: Set<Int>
 }
 
 private struct ConnectionRequest: Encodable {
@@ -26,19 +26,37 @@ private struct ConnectionRequest: Encodable {
         let touchpadMode: String
     }
 
+    struct HostFeatures: Encodable {
+        let mouseControl: Bool
+    }
+
     let deviceId: String
     let deviceName: String
     let protocolVersion: Int
-    let hmacProof: String
     let controllers: [Controller]
+    let hostFeatures: HostFeatures
 }
 
 private struct ConnectionResponse: Decodable {
-    let connectionId: String
-    let token: String
-    let sessionSalt: String
-    let epoch: UInt16
-    let maxControllers: Int
+    struct ControllerApply: Decodable {
+        let ctrlIdx: Int
+        let result: String
+        let appliedType: Int?
+
+        var slotIsLive: Bool {
+            result == "ok" || result == "replugFailed"
+        }
+    }
+
+    let connectionId: String?
+    let token: String?
+    let sessionSalt: String?
+    let epoch: Int?
+    let maxControllers: Int?
+    let protocolVersion: Int?
+    let controllers: [ControllerApply]?
+    let error: String?
+    let code: String?
 }
 
 final class SatelliteSessionClient {
@@ -75,8 +93,8 @@ final class SatelliteSessionClient {
             deviceId: deviceID,
             deviceName: deviceName,
             protocolVersion: 1,
-            hmacProof: proof,
-            controllers: controllers
+            controllers: controllers,
+            hostFeatures: .init(mouseControl: false)
         )
 
         var request = URLRequest(url: url)
@@ -94,17 +112,41 @@ final class SatelliteSessionClient {
             throw SatelliteSessionError.invalidResponse
         }
 
-        guard http.statusCode == 200 else {
+        if http.statusCode == 409 {
+            throw SatelliteSessionError.protocolMismatch
+        }
+
+        let decoded = try? JSONDecoder().decode(ConnectionResponse.self, from: data)
+
+        if http.statusCode == 401 || decoded?.code == "NOT_PAIRED" || decoded?.code == "BAD_PROOF" {
+            throw SatelliteSessionError.repairNeeded
+        }
+
+        guard http.statusCode == 200, let decoded else {
             throw SatelliteSessionError.http(http.statusCode)
         }
 
-        let decoded = try JSONDecoder().decode(ConnectionResponse.self, from: data)
+        guard let connectionID = decoded.connectionId,
+              let token = decoded.token,
+              token.count == 8,
+              let salt = decoded.sessionSalt,
+              salt.count == 16 else {
+            throw SatelliteSessionError.rejected(decoded.error ?? "Satellite returned incomplete session credentials.")
+        }
+
+        let registered = Set(
+            (decoded.controllers ?? [])
+                .filter(\.slotIsLive)
+                .map(\.ctrlIdx)
+        )
+
         return SatelliteSessionDescriptor(
-            connectionID: decoded.connectionId,
-            tokenHex: decoded.token,
-            sessionSaltHex: decoded.sessionSalt,
-            epoch: decoded.epoch,
-            maxControllers: decoded.maxControllers
+            connectionID: connectionID,
+            tokenHex: token,
+            sessionSaltHex: salt,
+            epoch: UInt16(clamping: decoded.epoch ?? 0),
+            maxControllers: decoded.maxControllers ?? 16,
+            registeredControllerIndices: registered
         )
     }
 }
@@ -112,13 +154,25 @@ final class SatelliteSessionClient {
 enum SatelliteSessionError: LocalizedError {
     case invalidHost
     case invalidResponse
+    case protocolMismatch
+    case repairNeeded
+    case rejected(String)
     case http(Int)
 
     var errorDescription: String? {
         switch self {
-        case .invalidHost: return "Could not resolve Satellite."
-        case .invalidResponse: return "Satellite returned an invalid session response."
-        case .http(let code): return "Satellite session failed (HTTP \(code))."
+        case .invalidHost:
+            return "Could not resolve Satellite."
+        case .invalidResponse:
+            return "Satellite returned an invalid session response."
+        case .protocolMismatch:
+            return "Dish and Satellite speak different protocol versions. Update both and try again."
+        case .repairNeeded:
+            return "Satellite no longer recognizes this iPhone. Pair it again."
+        case .rejected(let message):
+            return message
+        case .http(let code):
+            return "Satellite session failed (HTTP \(code))."
         }
     }
 }
