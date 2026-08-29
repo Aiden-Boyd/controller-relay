@@ -16,41 +16,50 @@ struct SatelliteListView: View {
                     )
                 } else {
                     ForEach(app.discovery.hosts) { host in
-                        Button {
-                            Task {
-                                connectingHostID = host.id
-                                let result = await app.prepareConnection(host: host)
-                                connectingHostID = nil
+                        VStack(spacing: 0) {
+                            Button {
+                                Task {
+                                    connectingHostID = host.id
+                                    let result = await app.prepareConnection(host: host)
+                                    connectingHostID = nil
 
-                                if result == .pairingRequired {
-                                    pairingHost = host
+                                    if result == .pairingRequired {
+                                        pairingHost = host
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "desktopcomputer")
+
+                                    VStack(alignment: .leading) {
+                                        Text(host.name)
+                                            .font(.headline)
+
+                                        Text(host.machineID)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    if connectingHostID == host.id {
+                                        ProgressView()
+                                    } else {
+                                        Image(systemName: "chevron.right")
+                                            .foregroundStyle(.tertiary)
+                                    }
                                 }
                             }
-                        } label: {
-                            HStack {
-                                Image(systemName: "desktopcomputer")
+                            .buttonStyle(.plain)
+                            .disabled(connectingHostID != nil)
 
-                                VStack(alignment: .leading) {
-                                    Text(host.name)
-                                        .font(.headline)
-
-                                    Text(host.machineID)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                if connectingHostID == host.id {
-                                    ProgressView()
-                                } else {
-                                    Image(systemName: "chevron.right")
-                                        .foregroundStyle(.tertiary)
-                                }
+                            Button("Pair / Repair") {
+                                pairingHost = host
                             }
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.top, 6)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(connectingHostID != nil)
                     }
                 }
             } header: {
@@ -66,8 +75,17 @@ struct SatelliteListView: View {
 
             Section("Controllers") {
                 if app.controllerManager.controllers.isEmpty {
-                    Text("No controllers connected")
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("No controllers connected")
+                            .foregroundStyle(.secondary)
+                        Text("If your Xbox controller is connected in iPhone Settings, tap Refresh.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Button("Refresh Controllers") {
+                        app.controllerManager.refresh()
+                    }
                 } else {
                     ForEach(Array(app.controllerManager.controllers.enumerated()), id: \.offset) { index, controller in
                         HStack {
@@ -77,6 +95,10 @@ struct SatelliteListView: View {
                             Text("P\(index + 1)")
                                 .foregroundStyle(.secondary)
                         }
+                    }
+
+                    Button("Refresh Controllers") {
+                        app.controllerManager.refresh()
                     }
                 }
             }
