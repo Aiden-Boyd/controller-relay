@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -15,6 +16,21 @@ final class AppModel: ObservableObject {
     let controllerManager = ControllerManager()
 
     private var approvalTask: Task<Void, Never>?
+    private var childCancellables = Set<AnyCancellable>()
+
+    init() {
+        discovery.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &childCancellables)
+
+        controllerManager.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &childCancellables)
+
+        streamer.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &childCancellables)
+    }
 
     func prepareConnection(host: SatelliteHost) async -> ConnectionPreparation {
         errorMessage = nil
@@ -76,10 +92,8 @@ final class AppModel: ObservableObject {
                     case .approved(let key):
                         await self.completePairing(host: host, sharedKey: key)
                         return
-
                     case .pending:
                         continue
-
                     case .declined:
                         self.pairingState = .failed
                         self.errorMessage = "The Satellite declined the pairing request."
@@ -155,6 +169,7 @@ final class AppModel: ObservableObject {
                 throw AppModelError.missingPairingKey
             }
 
+            controllerManager.refresh()
             let count = min(controllerManager.controllers.count, 16)
             let descriptor = try await sessionClient.create(
                 host: host,
