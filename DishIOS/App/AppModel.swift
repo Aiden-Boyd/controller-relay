@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     let controllerManager = ControllerManager()
 
     private var approvalTask: Task<Void, Never>?
+    private var topologyRestartTask: Task<Void, Never>?
     private var childCancellables = Set<AnyCancellable>()
 
     init() {
@@ -25,6 +26,24 @@ final class AppModel: ObservableObject {
 
         controllerManager.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &childCancellables)
+
+        controllerManager.$controllers
+            .map(\.count)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self,
+                      self.selectedSatellite != nil,
+                      self.pairingState == .paired else { return }
+
+                self.topologyRestartTask?.cancel()
+                self.topologyRestartTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    guard !Task.isCancelled else { return }
+                    await self?.restartStreamingForTopologyChange()
+                }
+            }
             .store(in: &childCancellables)
 
         streamer.objectWillChange
@@ -190,7 +209,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func restartStreamingForTopologyChange() async {
+        streamer.stop()
+        sessionDescriptor = nil
+        await startStreaming()
+    }
+
     func stopStreaming() {
+        topologyRestartTask?.cancel()
+        topologyRestartTask = nil
         streamer.stop()
         sessionDescriptor = nil
     }
