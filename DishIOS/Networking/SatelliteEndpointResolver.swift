@@ -17,18 +17,26 @@ enum SatelliteEndpointResolver {
                 case .ready:
                     guard let remote = connection.currentPath?.remoteEndpoint,
                           case let .hostPort(host, port) = remote else {
-                        state.finish(.failure(PairingError.invalidHost), connection: connection, continuation: continuation)
+                        state.finish(
+                            .failure(PairingError.invalidHost),
+                            connection: connection,
+                            continuation: continuation
+                        )
                         return
                     }
 
                     state.finish(
-                        .success((host.debugDescription, port.rawValue)),
+                        .success((hostString(host), port.rawValue)),
                         connection: connection,
                         continuation: continuation
                     )
 
                 case .failed(let error):
-                    state.finish(.failure(error), connection: connection, continuation: continuation)
+                    state.finish(
+                        .failure(error),
+                        connection: connection,
+                        continuation: continuation
+                    )
 
                 default:
                     break
@@ -36,6 +44,19 @@ enum SatelliteEndpointResolver {
             }
 
             connection.start(queue: .global(qos: .userInitiated))
+        }
+    }
+
+    private static func hostString(_ host: NWEndpoint.Host) -> String {
+        switch host {
+        case .name(let name, _):
+            return name
+        case .ipv4(let address):
+            return address.debugDescription
+        case .ipv6(let address):
+            return address.debugDescription
+        @unknown default:
+            return host.debugDescription
         }
     }
 }
